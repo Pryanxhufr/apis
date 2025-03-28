@@ -23,7 +23,7 @@ def write_cart(cart_entries):
 def save_to_cart(ip, product_id, quantity):
     try:
         cart_entries = read_cart()
-
+        
         # Check for existing entry with same IP and product_id
         found = False
         for entry in cart_entries:
@@ -50,7 +50,7 @@ def get_cart_items(ip):
     try:
         cart_entries = read_cart()
         products = read_products()
-
+        
         # Get all cart items for this IP and enrich with product details
         cart_items = []
         for entry in cart_entries:
@@ -63,7 +63,7 @@ def get_cart_items(ip):
                     # Handle price ranges (e.g. "Rs.1200-450") by taking first value
                     price = float(price_str.split("-")[0])
                     item_total = price * entry["quantity"]
-
+                    
                     cart_items.append({
                         "product_id": entry["product_id"],
                         "name": product.get("name", "Unknown Product"),
@@ -72,10 +72,10 @@ def get_cart_items(ip):
                         "item_total": f"Rs.{item_total:.2f}",
                         "image_url": product.get("image_url", "")
                     })
-
+        
         if not cart_items:
             return {"error": "No items found in cart"}
-
+            
         # Calculate total cart value
         cart_total = sum(float(item["item_total"].replace("Rs.", "")) for item in cart_items)
         return {"items": cart_items, "total_cart_value": f"Rs.{cart_total:.2f}"}
@@ -86,7 +86,7 @@ def get_cart_items(ip):
 def remove_from_cart(ip, product_id, quantity):
     try:
         cart_entries = read_cart()
-
+        
         # Find the user's item
         for i, entry in enumerate(cart_entries):
             if entry["ip"] == ip and entry["product_id"] == product_id:
@@ -101,7 +101,7 @@ def remove_from_cart(ip, product_id, quantity):
                     entry["timestamp"] = datetime.now().isoformat()
                     write_cart(cart_entries)
                     return {"removed": True, "message": f"Removed {quantity} items, {entry['quantity']} remaining"}
-
+                
         return {"removed": False, "message": "Item not found in cart"}
     except Exception as e:
         return {"removed": False, "message": str(e)}
@@ -128,10 +128,6 @@ def fetch_products(first, last):
     return jsonify(filtered_products)
 
 @app.route("/", methods=["GET"])
-def health_check():
-    return jsonify({"status": "alive"})
-
-@app.route("/product", methods=["GET"])
 def fetch_product_by_id():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     if client_ip:
@@ -157,7 +153,7 @@ def add_to_cart():
     print(f"Request from IP: {client_ip}")
     product_id = request.args.get("product_id", type=int)
     quantity = request.args.get("quantity", type=int)
-
+    
     if not product_id or not quantity:
         return jsonify({"error": "Missing product_id or quantity"}), 400
 
@@ -184,10 +180,10 @@ def remove_item():
     if client_ip:
         client_ip = client_ip.split(',')[0]
     print(f"Request from IP: {client_ip}")
-
+    
     product_id = request.args.get("product_id", type=int)
     quantity = request.args.get("quantity", type=int)
-
+    
     if not product_id:
         return jsonify({"error": "Missing product_id"}), 400
 
@@ -219,7 +215,7 @@ def get_cart():
     if client_ip:
         client_ip = client_ip.split(',')[0]
     print(f"Request from IP: {client_ip}")
-
+    
     cart_items = get_cart_items(client_ip)
     if isinstance(cart_items, dict) and "error" in cart_items:
         return jsonify(cart_items), 404
