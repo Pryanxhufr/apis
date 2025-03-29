@@ -162,7 +162,7 @@ def fetch_product_by_id():
         if product.get("product_id") == product_id:
             return jsonify(product)
 
-    return jsonify({"error": "Product not found"}), 404
+    return jsonify({"error": "Product not found"}), 200
 
 @app.route("/add_to_cart/", methods=["POST"])
 def add_to_cart():
