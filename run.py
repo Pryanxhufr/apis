@@ -26,12 +26,12 @@ def save_to_cart(ip, product_id, quantity, size=None):
     try:
         cart_entries = read_cart()
         products = read_products()
-        
+
         # Find product to check size selection
         product = next((p for p in products if p.get("product_id") == product_id), None)
         if not product:
             return False
-            
+
         # Only include size if product has size_selection true
         cart_entry = {
             "ip": ip,
@@ -39,7 +39,7 @@ def save_to_cart(ip, product_id, quantity, size=None):
             "quantity": quantity,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         if product.get("size_selection", False) and size:
             cart_entry["size"] = size
 
@@ -162,7 +162,7 @@ def fetch_product_by_id():
         if product.get("product_id") == product_id:
             return jsonify(product)
 
-    return jsonify({"error": "Product not found"}), 200
+    return jsonify({"message": "Product not found"}), 200
 
 @app.route("/add_to_cart/", methods=["POST"])
 def add_to_cart():
