@@ -22,26 +22,40 @@ def write_cart(cart_entries):
             json.dump(entry, file)
             file.write("\n")
 
-def save_to_cart(ip, product_id, quantity):
+def save_to_cart(ip, product_id, quantity, size=None):
     try:
         cart_entries = read_cart()
+        products = read_products()
+        
+        # Find product to check size selection
+        product = next((p for p in products if p.get("product_id") == product_id), None)
+        if not product:
+            return False
+            
+        # Only include size if product has size_selection true
+        cart_entry = {
+            "ip": ip,
+            "product_id": product_id,
+            "quantity": quantity,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        if product.get("size_selection", False) and size:
+            cart_entry["size"] = size
 
-        # Check for existing entry with same IP and product_id
+        # Check for existing entry with same IP, product_id and size
         found = False
         for entry in cart_entries:
-            if entry["ip"] == ip and entry["product_id"] == product_id:
+            if (entry["ip"] == ip and 
+                entry["product_id"] == product_id and 
+                entry.get("size") == cart_entry.get("size")):
                 entry["quantity"] += quantity
                 entry["timestamp"] = datetime.now().isoformat()
                 found = True
                 break
 
         if not found:
-            cart_entries.append({
-                "ip": ip,
-                "product_id": product_id,
-                "quantity": quantity,
-                "timestamp": datetime.now().isoformat()
-            })
+            cart_entries.append(cart_entry)
 
         write_cart(cart_entries)
         return True
@@ -66,14 +80,17 @@ def get_cart_items(ip):
                     price = float(price_str.split("-")[0])
                     item_total = price * entry["quantity"]
 
-                    cart_items.append({
+                    item = {
                         "product_id": entry["product_id"],
                         "name": product.get("name", "Unknown Product"),
                         "quantity": entry["quantity"],
                         "price_per_item": f"Rs.{price:.2f}",
                         "item_total": f"Rs.{item_total:.2f}",
                         "image_url": product.get("image_url", "")
-                    })
+                    }
+                    if "size" in entry:
+                        item["size"] = entry["size"]
+                    cart_items.append(item)
 
         if not cart_items:
             return {"error": "No items found in cart"}
@@ -155,6 +172,7 @@ def add_to_cart():
     print(f"Request from IP: {client_ip}")
     product_id = request.args.get("product_id", type=int)
     quantity = request.args.get("quantity", type=int)
+    size = request.args.get("size", "XS")
 
     if not product_id or not quantity:
         return jsonify({"error": "Missing product_id or quantity"}), 400
@@ -168,7 +186,14 @@ def add_to_cart():
     if not product:
         return jsonify({"error": "Product not found"}), 404
 
-    if save_to_cart(client_ip, product_id, quantity):
+    # Validate size if product has size_selection
+    valid_sizes = ["XS", "S", "M", "L", "XL", "XXL"]
+    if product.get("size_selection", False):
+        if not size or size.upper() not in valid_sizes:
+            return jsonify({"error": "Valid size required for this product"}), 400
+        size = size.upper()  # Standardize size to uppercase
+
+    if save_to_cart(client_ip, product_id, quantity, size):
         cart_items = get_cart_items(client_ip)
         return jsonify({
             "message": "Added to cart successfully",
