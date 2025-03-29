@@ -184,7 +184,7 @@ def add_to_cart():
     products = read_products()
     product = next((p for p in products if p.get("product_id") == product_id), None)
     if not product:
-        return jsonify({"error": "Product not found"}), 404
+        return jsonify({"error": "Product not found"}), 200
 
     # Validate size if product has size_selection
     valid_sizes = ["XS", "S", "M", "L", "XL", "XXL"]
@@ -221,7 +221,7 @@ def remove_item():
     products = read_products()
     product = next((p for p in products if p.get("product_id") == product_id), None)
     if not product:
-        return jsonify({"error": "Product not found"}), 404
+        return jsonify({"error": "Product not found"}), 200
 
     # If quantity is None or "all", remove all items of that product
     if quantity is None or str(quantity).lower() == "all":
@@ -234,7 +234,7 @@ def remove_item():
             "message": result["message"],
             "cart_items": cart_items
         })
-    return jsonify({"error": result["message"]}), 404
+    return jsonify({"error": result["message"]}), 200
 
 @app.route("/cart/", methods=["GET"])
 def get_cart():
@@ -245,7 +245,7 @@ def get_cart():
 
     cart_items = get_cart_items(client_ip)
     if isinstance(cart_items, dict) and "error" in cart_items:
-        return jsonify(cart_items), 404
+        return jsonify(cart_items), 200
     return jsonify({"cart_items": cart_items})
 
 if __name__ == "__main__":
