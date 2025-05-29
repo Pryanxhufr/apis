@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import json
 from datetime import datetime
+import requests
 
 app = Flask(__name__)
 CORS(app)
@@ -284,18 +285,22 @@ def order_success():
         for key, value in order_info.items():
             msg += f"*{key.capitalize().replace('_',' ')}*: `{value}`\n"
 
-        requests.post(TG_API, json={
+        tg_response = requests.post(TG_API, json={
             'chat_id': CHAT_ID,
             'text': msg,
             'parse_mode': 'Markdown'
         })
 
-        cart_data[ip] = []
-
-        return jsonify({'message': 'Order processed and cart cleared'}), 200
+        if tg_response.status_code == 200:
+            # Only clear the cart if the message was sent successfully
+            cart_data[ip] = []
+            return jsonify({'message': 'Order processed'}), 200
+        else:
+            return jsonify({'error': 'Failed'}), 502
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
