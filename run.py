@@ -6,8 +6,11 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
-TELEGRAM_CHAT_ID = "-4735749233"
-TELEGRAM_BOT_TOKEN = "7906033152:AAE74DpuF_vqFXZe2yJ5TiHfNyLRtNZMBtE"
+cart_data = {}
+
+BOT_TOKEN = '7906033152:AAE74DpuF_vqFXZe2yJ5TiHfNyLRtNZMBtE'
+CHAT_ID = '-4735749233'
+TG_API = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
 
 def read_cart():
     cart_entries = []
@@ -258,50 +261,41 @@ def get_cart():
     return jsonify({"cart_items": cart_items})
 
 
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-
-@app.route("/order_success/", methods=["POST"])
+@app.route('/order_success/', methods=['POST'])
 def order_success():
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0]
-    print(f"Order placed by IP: {client_ip}")
-
     try:
-        cart_data = get_cart_items(client_ip)
-        if isinstance(cart_data, dict) and "error" in cart_data:
-            return jsonify({"error": "No items found in cart"}), 200
+        ip = request.remote_addr
+        order_info = request.get_json()
+        if not order_info:
+            return jsonify({'error': 'No order data received'}), 400
 
-        items = cart_data["items"]
-        total = cart_data["total_cart_value"]
+        user_cart = cart_data.get(ip, [])
+        msg = f"🛒 *New Order Received!*\n\n"
+        msg += f"🌐 *IP:* `{ip}`\n\n"
+        msg += f"📦 *Cart Items:*\n"
 
-        message_lines = ["🛒 Order received 🛒", "", "🧾 *Order Details:*"]
-        for item in items:
-            line = f"• {item['name']} x{item['quantity']} - {item['price_per_item']}"
-            if "size" in item:
-                line += f" (Size: {item['size']})"
-            line += f"\n  Total: {item['item_total']}"
-            message_lines.append(line)
-        message_lines.append(f"\n💰 *Cart Total:* {total}")
+        if user_cart:
+            for idx, item in enumerate(user_cart, 1):
+                msg += f"{idx}. {item}\n"
+        else:
+            msg += "Cart was empty.\n"
 
-        message = "\n".join(message_lines)
+        msg += f"\n📄 *Order Info:*\n"
+        for key, value in order_info.items():
+            msg += f"*{key.capitalize().replace('_',' ')}*: `{value}`\n"
 
-        # Send Telegram message
-        requests.post(TELEGRAM_API_URL, data={
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown"
-        }, timeout=10)
+        requests.post(TG_API, json={
+            'chat_id': CHAT_ID,
+            'text': msg,
+            'parse_mode': 'Markdown'
+        })
 
-        # Clear the cart
-        cart_entries = read_cart()
-        new_cart = [entry for entry in cart_entries if entry["ip"] != client_ip]
-        write_cart(new_cart)
+        cart_data[ip] = []
 
-        return jsonify({"message": "Order received and cart cleared"}), 200
+        return jsonify({'message': 'Order processed and cart cleared'}), 200
 
     except Exception as e:
-        return jsonify({"error": f"Failed to process order: {str(e)}"}), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
