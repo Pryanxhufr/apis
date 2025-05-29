@@ -1,252 +1,112 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import json
-from datetime import datetime
+import os
+import requests
 
 app = Flask(__name__)
-CORS(app)
+
+CART_FILE = "cart.json"
+
+TELEGRAM_CHAT_ID = "-4735749233"
+TELEGRAM_BOT_TOKEN = "7906033152:AAE74DpuF_vqFXZe2yJ5TiHfNyLRtNZMBtE"
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
 def read_cart():
-    cart_entries = []
-    try:
-        with open("cart.txt", "r", encoding="utf-8") as file:
-            for line in file:
-                cart_entries.append(json.loads(line.strip()))
-    except FileNotFoundError:
-        pass
-    return cart_entries
+    if not os.path.exists(CART_FILE):
+        return []
+    with open(CART_FILE, "r") as f:
+        try:
+            return json.load(f)
+        except:
+            return []
 
-def write_cart(cart_entries):
-    with open("cart.txt", "w", encoding="utf-8") as file:
-        for entry in cart_entries:
-            json.dump(entry, file)
-            file.write("\n")
-
-def save_to_cart(ip, product_id, quantity, size=None):
-    try:
-        cart_entries = read_cart()
-        products = read_products()
-
-        # Find product to check size selection
-        product = next((p for p in products if p.get("product_id") == product_id), None)
-        if not product:
-            return False
-
-        # Only include size if product has size_selection true
-        cart_entry = {
-            "ip": ip,
-            "product_id": product_id,
-            "quantity": quantity,
-            "timestamp": datetime.now().isoformat()
-        }
-
-        if product.get("size_selection", False) and size:
-            cart_entry["size"] = size
-
-        # Check for existing entry with same IP, product_id and size
-        found = False
-        for entry in cart_entries:
-            if (entry["ip"] == ip and 
-                entry["product_id"] == product_id and 
-                entry.get("size") == cart_entry.get("size")):
-                entry["quantity"] += quantity
-                entry["timestamp"] = datetime.now().isoformat()
-                found = True
-                break
-
-        if not found:
-            cart_entries.append(cart_entry)
-
-        write_cart(cart_entries)
-        return True
-    except Exception:
-        return False
+def write_cart(cart_data):
+    with open(CART_FILE, "w") as f:
+        json.dump(cart_data, f, indent=2)
 
 def get_cart_items(ip):
-    try:
-        cart_entries = read_cart()
-        products = read_products()
+    cart_data = read_cart()
+    items = [item for item in cart_data if item["ip"] == ip]
+    if not items:
+        return {"error": "No items found for IP."}
 
-        # Get all cart items for this IP and enrich with product details
-        cart_items = []
-        for entry in cart_entries:
-            if entry["ip"] == ip:
-                # Find product details
-                product = next((p for p in products if p.get("product_id") == entry["product_id"]), None)
-                if product:
-                    # Get price without "Rs." prefix and convert to float
-                    price_str = product.get("price", "0").replace("Rs.", "").strip()
-                    # Handle price ranges (e.g. "Rs.1200-450") by taking first value
-                    price = float(price_str.split("-")[0])
-                    item_total = price * entry["quantity"]
+    total_cart_value = sum(float(item["item_total"].replace("₹", "").strip()) for item in items)
+    return {
+        "ip": ip,
+        "items": items,
+        "total_cart_value": f"₹{total_cart_value:.2f}"
+    }
 
-                    item = {
-                        "product_id": entry["product_id"],
-                        "name": product.get("name", "Unknown Product"),
-                        "quantity": entry["quantity"],
-                        "price_per_item": f"Rs.{price:.2f}",
-                        "item_total": f"Rs.{item_total:.2f}",
-                        "image_url": product.get("image_url", "")
-                    }
-                    if "size" in entry:
-                        item["size"] = entry["size"]
-                    cart_items.append(item)
-
-        if not cart_items:
-            return {"error": "No items found in cart"}
-
-        # Calculate total cart value
-        cart_total = sum(float(item["item_total"].replace("Rs.", "")) for item in cart_items)
-        return {"items": cart_items, "total_cart_value": f"Rs.{cart_total:.2f}"}
-    except Exception as e:
-        print(f"Error getting cart items: {e}")
-        return []
-
-def remove_from_cart(ip, product_id, quantity):
-    try:
-        cart_entries = read_cart()
-
-        # Find the user's item
-        for i, entry in enumerate(cart_entries):
-            if entry["ip"] == ip and entry["product_id"] == product_id:
-                if quantity >= entry["quantity"]:
-                    # Remove entire entry if quantity to remove is >= current quantity
-                    cart_entries.pop(i)
-                    write_cart(cart_entries)
-                    return {"removed": True, "message": "Item completely removed from cart"}
-                else:
-                    # Reduce the quantity
-                    entry["quantity"] -= quantity
-                    entry["timestamp"] = datetime.now().isoformat()
-                    write_cart(cart_entries)
-                    return {"removed": True, "message": f"Removed {quantity} items, {entry['quantity']} remaining"}
-
-        return {"removed": False, "message": "Item not found in cart"}
-    except Exception as e:
-        return {"removed": False, "message": str(e)}
-
-def read_products():
-    products = []
-    with open("products.txt", "r", encoding="utf-8") as file:
-        for line in file:
-            try:
-                product = json.loads(line.strip())  # Use JSON instead of ast
-                products.append(product)
-            except json.JSONDecodeError:
-                continue
-    return products
-
-@app.route("/fetch_product_range/<int:first>_<int:last>", methods=["GET"])
-def fetch_products(first, last):
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0]
-    print(f"Request from IP: {client_ip}")
-    products = read_products()
-    filtered_products = [p for p in products if first <= p.get("product_id", 0) <= last]
-    return jsonify(filtered_products)
-
-@app.route("/", methods=["GET"])
-def fetch_product_by_id():
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0]
-    print(f"Request from IP: {client_ip}")
-    product_id = request.args.get("product_id", type=int)
-
-    if product_id is None:
-        return jsonify({"error": "Missing product_id parameter"}), 400
-
-    products = read_products()
-    for product in products:
-        if product.get("product_id") == product_id:
-            return jsonify(product)
-
-    return jsonify({"message": "Product not found"}), 200
-
-@app.route("/add_to_cart/", methods=["POST"])
+@app.route("/add_to_cart", methods=["POST"])
 def add_to_cart():
+    data = request.get_json()
+    required = ["name", "quantity", "price_per_item", "item_total"]
+    if not all(k in data for k in required):
+        return jsonify({"error": "Missing data"}), 400
+
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     if client_ip:
         client_ip = client_ip.split(',')[0]
-    print(f"Request from IP: {client_ip}")
-    product_id = request.args.get("product_id", type=int)
-    quantity = request.args.get("quantity", type=int)
-    size = request.args.get("size", "XS")
 
-    if not product_id or not quantity:
-        return jsonify({"error": "Missing product_id or quantity"}), 400
+    cart_entry = {
+        "ip": client_ip,
+        "name": data["name"],
+        "quantity": data["quantity"],
+        "price_per_item": data["price_per_item"],
+        "item_total": data["item_total"]
+    }
 
-    if quantity <= 0:
-        return jsonify({"error": "Invalid quantity"}), 400
+    if "size" in data:
+        cart_entry["size"] = data["size"]
 
-    # Check if product exists first
-    products = read_products()
-    product = next((p for p in products if p.get("product_id") == product_id), None)
-    if not product:
-        return jsonify({"error": "Product not found"}), 200
+    cart_data = read_cart()
+    cart_data.append(cart_entry)
+    write_cart(cart_data)
 
-    # Validate size if product has size_selection
-    valid_sizes = ["XS", "S", "M", "L", "XL", "XXL"]
-    if product.get("size_selection", False):
-        if not size or size.upper() not in valid_sizes:
-            return jsonify({"error": "Valid size required for this product"}), 400
-        size = size.upper()  # Standardize size to uppercase
+    return jsonify({"message": "Item added to cart"}), 200
 
-    if save_to_cart(client_ip, product_id, quantity, size):
-        cart_items = get_cart_items(client_ip)
-        return jsonify({
-            "message": "Added to cart successfully",
-            "cart_items": cart_items
-        })
-    return jsonify({"error": "Failed to add to cart"}), 500
-
-@app.route("/remove_item/", methods=["POST"])
-def remove_item():
+@app.route("/order_success/", methods=["POST"])
+def order_success():
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     if client_ip:
         client_ip = client_ip.split(',')[0]
-    print(f"Request from IP: {client_ip}")
+    print(f"Order placed by IP: {client_ip}")
 
-    product_id = request.args.get("product_id", type=int)
-    quantity = request.args.get("quantity", type=int)
+    try:
+        cart_data = get_cart_items(client_ip)
+        if isinstance(cart_data, dict) and "error" in cart_data:
+            return jsonify({"error": "No items found in cart"}), 200
 
-    if not product_id:
-        return jsonify({"error": "Missing product_id"}), 400
+        items = cart_data["items"]
+        total = cart_data["total_cart_value"]
 
-    if quantity is not None and quantity <= 0:
-        return jsonify({"error": "Invalid quantity"}), 400
+        message_lines = ["🛒 *Order received* 🛒", "", "🧾 *Order Details:*"]
+        for item in items:
+            line = f"• {item['name']} x{item['quantity']} - {item['price_per_item']}"
+            if "size" in item:
+                line += f" (Size: {item['size']})"
+            line += f"\n  Total: {item['item_total']}"
+            message_lines.append(line)
+        message_lines.append(f"\n💰 *Cart Total:* {total}")
 
-    # Check if product exists first
-    products = read_products()
-    product = next((p for p in products if p.get("product_id") == product_id), None)
-    if not product:
-        return jsonify({"error": "Product not found"}), 200
+        message = "\n".join(message_lines)
 
-    # If quantity is None or "all", remove all items of that product
-    if quantity is None or str(quantity).lower() == "all":
-        result = remove_from_cart(client_ip, product_id, float('inf'))  # Using infinity to remove all
-    else:
-        result = remove_from_cart(client_ip, product_id, quantity)
-    if result["removed"]:
-        cart_items = get_cart_items(client_ip)
-        return jsonify({
-            "message": result["message"],
-            "cart_items": cart_items
-        })
-    return jsonify({"error": result["message"]}), 200
+        # Send Telegram message
+        requests.post(TELEGRAM_API_URL, data={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }, timeout=10)
 
-@app.route("/cart/", methods=["GET"])
-def get_cart():
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip:
-        client_ip = client_ip.split(',')[0]
-    print(f"Request from IP: {client_ip}")
+        # Clear the cart
+        cart_entries = read_cart()
+        new_cart = [entry for entry in cart_entries if entry["ip"] != client_ip]
+        write_cart(new_cart)
 
-    cart_items = get_cart_items(client_ip)
-    if isinstance(cart_items, dict) and "error" in cart_items:
-        return jsonify(cart_items), 200
-    return jsonify({"cart_items": cart_items})
+        return jsonify({"message": "Order received"}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to process order"}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(debug=True)
